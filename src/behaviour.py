@@ -7,7 +7,7 @@ from textwrap import dedent
 
 
 import decorators
-from stages import STAGES
+from stages import STAGES, STAGES_TITLES
 
 class ScenarioPreconditionsNotMet(Exception):
     pass
@@ -19,17 +19,110 @@ def makelist(arg):
         return arg
     else:
         return (arg,)
-def process_exception(result, e):
-    return result
 
 
+DEFAULT_SCENARIO_FORMAT = 'text'
+
+
+def unCamel(x): 
+    return reduce(lambda a,b: a + ((b.upper() == b and \
+                                    (len(a) and a[-1].upper() != a[-1])) and \
+                                    (' ' + b) or b), x, '')
+
+
+class BehaviourResult(list):
+    def check_passed(self, result):
+        if not result.passed:
+            return result.passed
+        else:
+            for subres in result.subresults:
+                if not self.check_passed(subres):
+                    return False
+            
+            return True 
+    
+    @property
+    def status(self):
+        for res in self:
+            if res.skipped:
+                return None
+            if not self.check_passed(res):
+                return False
+        return True
+    
+    def format_recursively(self, result, indent=0):
+        yield result.format(indent=indent)
+        for result in result.subresults:
+            for formatted in self.format_recursively(result, indent=indent+1):
+                yield formatted
+    
+    def format(self, type='text'):
+        indent = 0
+        for res in self:
+            for formatted in self.format_recursively(res, indent=indent):
+                yield formatted 
+ 
 class ScenarioResult(object):
     def __init__(self, scenario):
+        self.scenario = scenario
         self.skipped = False
         self.error = False
         self.passed = False
         self.traceback = None
-        self.subs = [] 
+        self.subs = []
+        self.subresults = []
+    
+    def describe(self, stage, prefix=True):
+        if stage.__doc__:
+            return stage.__doc__
+        else:
+            words = []
+            if prefix:
+                words += '%s:'%STAGES_TITLES[stage._stage],
+            #first split by underscore
+            predescr = stage.__name__.split('_')
+            #then split by camel-case
+            for descr in predescr:
+                if descr.lower() == descr:
+                    words += descr,
+                else:
+                    words += unCamel(descr),
+                    
+            return ' '.join(words) 
+                     
+    @property
+    def status(self):
+        if not self.skipped:
+            return '\n%s'%(self.passed and 'OK' or self.error and 'ERROR' or 'FAIL')
+        else:
+            return '\n:SKIPPED'
+    
+    def format_text(self, with_traceback, indent = 0):
+        indent = '\t'*indent 
+        text = ''
+        for stage in [self.scenario.given, 
+                           self.scenario.when, 
+                           self.scenario.then, 
+                           self.scenario.should]:
+            if not stage:
+                continue
+            
+            if not text:                
+                if stage._stage == STAGES.GIVEN:
+                    text += '%s%s'%(indent, self.describe(stage))
+                else: 
+                    text += '%sGiven:'%indent + ','.join([arg for arg in inspect.getargspec(stage.wrapped).args if not arg == 'self'])
+                    text += '\n\t%s%s'%(indent, self.describe(stage))
+            else:
+                text += '\n\t%s%s'%(indent, self.describe(stage))
+        text += self.status
+        return text
+            
+    def format(self, 
+               type=DEFAULT_SCENARIO_FORMAT, 
+               with_traceback=False,
+               indent=0):
+        return getattr(self, 'format_%s'%type)(with_traceback, indent=indent)
 
 class Scenario(object):
     '''
@@ -86,9 +179,21 @@ class Scenario(object):
     def __repr__(self):
         return ('%s'+4*'\n\t%s'+'\n')%(self.behaviour, self.given, self.when, self.then, self.should) 
 
-
 class Behaviour(object):
-    _omit_member_names = ('_omit_member_names', '__init__', '_class_member_names', '_obj_classes', '_unique_names', '_iter_member_names', '_iter_bdd_descriptors', 'scenario_stages', '_stages_dict_to_args', '_iter_scenarios', 'scenarios',)
+    _omit_member_names = ('__call__',
+                          '_omit_member_names', 
+                          '__init__', 
+                          '_class_member_names', 
+                          '_obj_classes', 
+                          '_unique_names', 
+                          '_iter_member_names', 
+                          '_iter_bdd_descriptors', 
+                          'scenario_stages', 
+                          '_stages_dict_to_args', 
+                          '_iter_scenarios', 
+                          'scenarios',
+                          '__call_recursively__')
+
     def __init__(self, *args):
         self.args = args
     
@@ -96,23 +201,7 @@ class Behaviour(object):
 
                     
             passed_bases += base,
-        
-    def _obj_classes(self):
-        '''
-        iter base classes starting from Behaviour and finishing current class
-        '''
 
-
-    def _unique_names(self, bases, names):
-        removed_names = []
-        for base in bases:
-            for name in names:
-                if name in bases and not name in removed_names:
-                    removed_names += name,
-                    
-        for name in names:
-            if not name in removed_names:
-                yield name
         
     def _iter_member_names(self):
         '''
@@ -204,3 +293,20 @@ scenario'%(stage,stage._stage))
         if not hasattr(self, '_scenarios'):
             self._scenarios = list(self._iter_scenarios())
         return self._scenarios
+    
+    def __call_recursively__(self, subs):
+        for sub in subs:
+            for result in sub():
+                result.subresults += list(self.__call_recursively__(result.subs))
+            yield result
+        
+    def __call__(self, *args):
+        if not args:
+            args = self.args
+        results = BehaviourResult()
+        for scenario in self.scenarios:
+            result = scenario(*args)
+            result.subresults = list(self.__call_recursively__(result.subs))
+            results += result,
+        return results
+            

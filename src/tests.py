@@ -303,7 +303,6 @@ class TestBehaviorScenarios(unittest.TestCase):
         '''
         Behaviour scenarios inherited from parent
         '''
-        
         class TestBBase(Behaviour):
             @given
             def a(self):
@@ -320,10 +319,8 @@ class TestBehaviorScenarios(unittest.TestCase):
             def d1(self, v):
                 return v == 2
         b = TestBChild()
-        import inspect
-        print inspect.getsource(TestBChild)
-        print list(b._iter_member_names())
-        self.assert_(len(b.scenarios) == 2)
+        self.assert_(b.scenarios == [Scenario(b, b.a, None, None, b.d), 
+                                     Scenario(b, b.a1, None, None, b.d1)])
             
 class TestScenario(unittest.TestCase):
     def test_should_started_with_init_args(self):
@@ -491,8 +488,132 @@ class TestScenario(unittest.TestCase):
 
             @should
             def d(self, a):
-
                 return a == 'testarg' 
         self.assertRaises(ValueError, lambda:TestB12().scenarios[0]('testarg'))
 
+class TestScenarioResult(unittest.TestCase):
+    def test_scenario_result_text_formatting_from__doc__(self):
+        '''
+        Text formatting of simple scenario result 
+        '''
+        class TestB13(Behaviour):
+            @when
+            def c(self, a):
+                """when a == 'testarg'"""
+                assert a == 'testarg'
+
+            @should
+            def d(self, a):
+                """len(a) should be equal to 7"""
+                return len(a) == 7 
     
+    
+        result = TestB13().scenarios[0]('testarg')
+        self.assert_(result.format() == """Given:a\n\twhen a == 'testarg'\n\tlen(a) should be equal to 7\nOK""")
+    
+    def test_scenario_result_text_formatting_from__name__(self):
+        '''
+        Text formatting of functions without doc 
+        '''
+        class TestB14(Behaviour):
+            @when
+            def string_is_testarg(self, a):
+                assert a == 'testarg'
+
+            @should
+            def len_string_equal_to_7(self, a):
+                return len(a) == 7
+            
+        result = TestB14().scenarios[0]('testarg')
+        self.assert_(result.format() == """Given:a\n\tWhen: string is testarg\n\tShould: len string equal to 7\nOK""")
+
+    def test_scenario_result_text_formatting_from__name__with_camel_case(self):
+        '''
+        Text formatting of functions without doc (with camel case names)
+        '''
+        class TestB15(Behaviour):
+            @given
+            def some_string(self, a):
+                return a
+            @when
+            def string_is_testArg(self, a):
+                assert a == 'testarg'
+
+            @should
+            def len_string_equal_to_7(self, a):
+                return len(a) == 7
+        
+        result = TestB15().scenarios[0]('testarg')
+        self.assert_(result.format() == """Given: some string\n\tWhen: string is test Arg\n\tShould: len string equal to 7\nOK""")
+class TestBehaviour(unittest.TestCase):
+    def test_simple_behaviour(self):
+        '''
+        test one level behaviour text formatting
+        '''
+        class TestB16(Behaviour):
+            @given
+            def some_string(self, a):
+                return a
+            @when
+            def string_is_testArg(self, a):
+                assert a == 'testarg'
+
+            @should
+            def len_string_equal_to_7(self, a):
+                return len(a) == 7
+            
+            @should
+            def len_string_equal_to_7a(self, a):
+                return len(a) == 7
+            
+            @when
+            def all_is_good(self, a):
+                return
+            
+            @should
+            def be_equal_ToTestarg(self, a):
+                return a == 'testarg'
+
+        b = TestB16()
+        self.assert_('\n'.join(b('testarg').format()) == \
+                     """Given: some string\n\tWhen: string is test Arg\n\tShould: len string equal to 7\nOK\nGiven:a\n\tShould: len string equal to 7a\nOK\nGiven:a\n\tWhen: all is good\n\tShould: be equal To Testarg\nOK""")
+    
+    def test_nested_behaviour(self):
+        '''
+        test nested behaviours text formatting
+        '''
+        class TestSub(Behaviour):
+            @given
+            def number(self, n):
+                return n
+            @should
+            def be_equal_to_5(self, n):
+                return n==5
+        
+        class TestB17(Behaviour):
+            @given
+            def some_string(self, a):
+                return a
+            @when
+            def string_is_testArg(self, a):
+                assert a == 'testarg'
+
+            @should
+            def len_string_equal_to_7(self, a):
+                return len(a) == 7
+
+            @when
+            def all_is_good(self, a):
+                return TestSub(5), TestSub(6)    
+            @should
+            def be_equal_ToTestarg(self, a):
+                return a == 'testarg'            
+            
+            @should
+            def len_string_equal_to_7a(self, a):
+                return len(a) == 7
+            
+
+
+        b = TestB17()        
+        self.assert_('\n'.join(b('testarg').format()) == """Given: some string\n\tWhen: string is test Arg\n\tShould: len string equal to 7\nOK\nGiven:a\n\tWhen: all is good\n\tShould: be equal To Testarg\nOK\n\tGiven: number\n\t\tShould: be equal to 5\nOK\n\tGiven: number\n\t\tShould: be equal to 5\nFAIL\nGiven:a\n\tShould: len string equal to 7a\nOK""")

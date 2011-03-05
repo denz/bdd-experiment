@@ -8,8 +8,6 @@ class BDDDescriptor(object):
     '''
     def __init__(self, wrapped):
         self.wrapped = wrapped
-        if getattr(self, '_behavior_new_seq', False):
-            pass
         
     def __get__(self, instance, owner):
         if not instance:
