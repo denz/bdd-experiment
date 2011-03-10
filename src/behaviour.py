@@ -197,9 +197,7 @@ class Behaviour(object):
     def __init__(self, *args):
         self.args = args
     
-    def _class_member_names(self, cls):
-
-                    
+    def _class_member_names(self, cls):       
             passed_bases += base,
 
         

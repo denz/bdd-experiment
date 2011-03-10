@@ -42,7 +42,7 @@ class TestBDDDescriptor(unittest.TestCase):
 class TestBehaviorScenarios(unittest.TestCase):
     def test_behaviour_iter_memebers(self):
         '''
-        Behaviour._iter_member_names() should return defs and assigns in correct order
+        Behaviour._iter_member_names() should return defs and assigns in or of definition
         '''
         class TestB1(Behaviour):
             def a0(self):
