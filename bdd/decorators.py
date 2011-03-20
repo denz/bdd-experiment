@@ -4,7 +4,7 @@ from stages import STAGES
 
 class BDDDescriptor(object):
     '''
-    base for @given, @when, @then, @should, and other stages of testing
+    base for @given, @when, @then, @should, and any other stages of testing
     '''
     def __init__(self, wrapped):
         self.wrapped = wrapped
